@@ -30,6 +30,23 @@ def randbits(bits: int, algo: str = "lcg", last_value: int = 21) -> tuple[int, i
     else:
         raise ValueError("Algoritmo não suportado. Use 'lcg' ou 'xorshift'.")
 
+def randrange_custom(low: int, high: int, algo: str, last_value: int) -> tuple[int, int]:
+    """
+    Mimics random.randint(low, high) using the custom randbits function.
+    Returns (number, new_last_value).
+    """
+    if low > high:
+        raise ValueError("low must be <= high")
+
+    # Range size
+    rng = high - low + 1
+
+    # Generate enough bits to cover the range
+    bits = rng.bit_length()
+    while True:
+        val, last_value = randbits(bits, algo, last_value)
+        if val < rng:  # accept only if within range
+            return low + val, last_value
 
 def normalize_candidate(n: int, bits: int) -> int:
     """Garante que n tenha exatamente 'bits' bits, MSB=1 e LSB=1."""
@@ -37,47 +54,73 @@ def normalize_candidate(n: int, bits: int) -> int:
     n |= 1                  # força ser ímpar
     return n & ((1 << bits) - 1)
 
+def power(a: int, n: int, p: int) -> int:
+    """Iterative modular exponentiation: (a^n) % p."""
+    res = 1
+    a = a % p
+
+    while n > 0:
+        if n % 2:  # if n is odd
+            res = (res * a) % p
+            n -= 1
+        else:
+            a = (a * a) % p
+            n //= 2
+
+    return res % p
 
 # ======================================================
 # Testes de primalidade
 # ======================================================
-def miller_rabin(n: int, k: int, algo: str, last_value: int) -> tuple[bool, int]:
-    """Teste de Miller-Rabin usando PRNG para gerar bases."""
-    if n < 2:
-        return False, last_value
-    for p in [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]:
-        if n == p:
-            return True, last_value
-        if n % p == 0:
-            return False, last_value
+def miller_test(d: int, n: int, algo: str, last_value: int) -> tuple[bool, int]:
+    """
+    One Miller-Rabin trial. Returns (probably_prime, new_last_value).
+    """
+    # Pick a random base in [2..n-2]
+    a, last_value = randrange_custom(2, n - 2, algo, last_value)
 
-    # escreve n-1 = 2^r * d
+    # Compute a^d % n
+    x = power(a, d, n)
+
+    if x == 1 or x == n - 1:
+        return True, last_value
+
+    # Keep squaring x until d reaches n-1
+    while d != n - 1:
+        x = (x * x) % n
+        d *= 2
+
+        if x == 1:
+            return False, last_value
+        if x == n - 1:
+            return True, last_value
+
+    return False, last_value
+
+def miller_rabin(n: int, k: int, algo: str, last_value: int) -> tuple[bool, int]:
+    """Miller-Rabin primality test with custom PRNG."""
+    # Corner cases
+    if n <= 1 or n == 4:
+        return False, last_value
+    if n <= 3:
+        return True, last_value
+
+    # Write n-1 as d*2^r with d odd
     d = n - 1
-    r = 0
     while d % 2 == 0:
         d //= 2
-        r += 1
 
+    # Run k trials
     for _ in range(k):
-        a, last_value = randbits(n.bit_length(), algo, last_value)
-        a = 2 + (a % (n - 3))
-        x = pow(a, d, n)
-        if x == 1 or x == n - 1:
-            continue
-        composite = True
-        for _ in range(r - 1):
-            x = pow(x, 2, n)
-            if x == n - 1:
-                composite = False
-                break
-        if composite:
+        ok, last_value = miller_test(d, n, algo, last_value)
+        if not ok:
             return False, last_value
+
     return True, last_value
 
-
 def fermat_test(n: int, k: int, algo: str, last_value: int) -> tuple[bool, int]:
-    """Teste de Fermat usando PRNG para escolher bases."""
-    if n < 2:
+    """Fermat primality test with custom PRNG for base selection."""
+    if n in (1, 4):
         return False, last_value
     if n in (2, 3):
         return True, last_value
@@ -85,19 +128,22 @@ def fermat_test(n: int, k: int, algo: str, last_value: int) -> tuple[bool, int]:
         return False, last_value
 
     for _ in range(k):
-        a, last_value = randbits(n.bit_length(), algo, last_value)
-        a = 2 + (a % (n - 3))
-        if pow(a, n - 1, n) != 1:
+        # Use custom randint replacement: [2, n-2]
+        a, last_value = randrange_custom(2, n - 2, algo, last_value)
+
+        # Fermat's Little Theorem check
+        if power(a, n - 1, n) != 1:
             return False, last_value
+
     return True, last_value
 
 
 # ======================================================
 # Geração de primos a partir do PRNG
 # ======================================================
-def generate_prime_miller_rabin(bits: int, algo: str = "lcg", k: int = 8) -> int:
+def generate_prime_miller_rabin(bits: int, algo: str = "lcg", seed: int = 21, k: int = 8) -> int:
     """Gera um número primo de 'bits' bits usando Miller-Rabin."""
-    last_value = bits
+    last_value = seed
     while True:
         candidate, last_value = randbits(bits, algo, last_value)
         candidate = normalize_candidate(candidate, bits)
@@ -109,9 +155,9 @@ def generate_prime_miller_rabin(bits: int, algo: str = "lcg", k: int = 8) -> int
             return candidate
 
 
-def generate_prime_fermat(bits: int, algo: str = "lcg", k: int = 8) -> int:
+def generate_prime_fermat(bits: int, algo: str = "lcg", seed: int = 21, k: int = 8) -> int:
     """Gera um número primo de 'bits' bits usando Fermat."""
-    last_value = bits
+    last_value = seed
     while True:
         candidate, last_value = randbits(bits, algo, last_value)
         candidate = normalize_candidate(candidate, bits)

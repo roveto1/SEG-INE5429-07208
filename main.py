@@ -3,5 +3,8 @@ from item3 import item3
 
 if __name__ == "__main__":
 
-    item2()
-    # item3()
+    choice = input("Run item 2 or item 3? (2/3): ").strip()
+    if choice == '2':
+        item2()
+    elif choice == '3':
+        item3()
