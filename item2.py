@@ -7,6 +7,8 @@ import os, math
 from pseudo_number_gen.Xorshift import Xorshift
 from pseudo_number_gen.LCG import LCG
 
+def ns_to_ms(ns):
+    return ns / 1_000_000
 def to_superscript_10(n):
     exponent = int(math.log10(n))
     sup = str(exponent).translate(str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹"))
@@ -45,13 +47,14 @@ def test_lcg(NUM_SIZES, LCG_SEED, NUM_ITERATIONS, LCG_A, LCG_C):
             rng.append(n)
         avg_ns = numpy.average(times)
         print(f"LCG {bits}-bit: {avg_ns} ns per iteration")
+        print(min(rng).bit_length(), min(rng), max(rng).bit_length(), max(rng))
         plot_histogram(rng, NUM_ITERATIONS, 100, f"LCG {bits}b", "results/plots/LCG")
 
-        lcg_results.append((index+1, bits, avg_ns))
+        lcg_results.append((index+1, bits, min(rng).bit_length(), min(rng), max(rng).bit_length(), max(rng), ns_to_ms(avg_ns)))
 
     with open("results/LCG_benchmark.csv", "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["ID", "Bits", "Time(ns)"])
+        writer.writerow(["ID", "Bits", "MinBitSize", "MinRNG", "MaxBitSize", "MaxRNG", "AvgTime(ms)"])
         writer.writerows(lcg_results)
 
 def test_xorshift(NUM_SIZES, XORSHIFT_SEED, NUM_ITERATIONS):
@@ -69,24 +72,25 @@ def test_xorshift(NUM_SIZES, XORSHIFT_SEED, NUM_ITERATIONS):
             rng.append(n)
         avg_ns = numpy.average(times)
         print(f"Xorshift {bits}-bit: {avg_ns} ns per iteration")
+        print(min(rng).bit_length(), min(rng), max(rng).bit_length(), max(rng))
         plot_histogram(rng, NUM_ITERATIONS, 100, f"Xorshift {bits}b", "results/plots/Xorshift")
 
-        xorshift_results.append((index + 1, bits, avg_ns))
+        xorshift_results.append((index+1, bits, min(rng).bit_length(), min(rng), max(rng).bit_length(), max(rng), ns_to_ms(avg_ns)))
 
     with open("results/Xorshift_benchmark.csv", "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["ID", "Bits", "Time(ns)"])
+        writer.writerow(["ID", "Bits", "MinBitSize", "MinRNG", "MaxBitSize", "MaxRNG", "AvgTime(ms)"])
         writer.writerows(xorshift_results)
 def item2():
     NUM_SIZES = [40, 56, 80, 128, 168, 224, 256, 512, 1024, 2048, 4096]
     NUM_ITERATIONS = 1_000_000
 
-    LCG_SEED = 2**27
-    LCG_A = 33690453
-    LCG_C = 1013904223
+    LCG_SEED = 2**33
+    LCG_A = 3124199165 
+    LCG_C = 27181987157
     test_lcg(NUM_SIZES, LCG_SEED, NUM_ITERATIONS, LCG_A, LCG_C)
 
-    XORSHIFT_SEED = 2**27
+    XORSHIFT_SEED = 2**33
     test_xorshift(NUM_SIZES, XORSHIFT_SEED, NUM_ITERATIONS)
 
     

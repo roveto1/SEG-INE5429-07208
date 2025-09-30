@@ -4,6 +4,7 @@ Primalidade com Miller-Rabin + Fermat
 
 from pseudo_number_gen.LCG import LCG
 from pseudo_number_gen.Xorshift import Xorshift
+import csv
 
 
 # ======================================================
@@ -18,7 +19,7 @@ def randbits(bits: int, algo: str = "lcg", last_value: int = 21) -> tuple[int, i
         (novo_valor, novo_last_value)
     """
     if algo.lower() == "lcg":
-        prng = LCG(seed=last_value, bits=bits, a=1664525, c=1013904223)
+        prng = LCG(seed=last_value, bits=bits)
         value = prng.next()
         return value & ((1 << bits) - 1), value
 
@@ -73,68 +74,84 @@ def power(a: int, n: int, p: int) -> int:
 # Testes de primalidade
 # ======================================================
 def miller_test(d: int, n: int, algo: str, last_value: int) -> tuple[bool, int]:
-    """
-    One Miller-Rabin trial. Returns (probably_prime, new_last_value).
-    """
-    # Pick a random base in [2..n-2]
+    # Escolhe uma base aleatória a no intervalo [2..n-2].
+    # Aqui 'last_value' funciona como a seed para o gerador randrange_custom.
     a, last_value = randrange_custom(2, n - 2, algo, last_value)
 
-    # Compute a^d % n
+    # Calcula x = a^d mod n.
+    # Esse é o primeiro teste: se o resultado for 1 ou n-1,
+    # n passa na rodada de Miller-Rabin para a base escolhida.
     x = power(a, d, n)
 
     if x == 1 or x == n - 1:
         return True, last_value
 
-    # Keep squaring x until d reaches n-1
+    # Caso contrário, inicia-se a sequência de quadraturas:
+    # repete-se x = x^2 mod n e dobra-se o expoente d até atingir n-1.
     while d != n - 1:
         x = (x * x) % n
         d *= 2
 
+        # Se em algum momento o resultado for 1, n é composto.
         if x == 1:
             return False, last_value
+        # Se em algum momento o resultado for n-1, n passa no teste.
         if x == n - 1:
             return True, last_value
 
+    # Se a sequência termina sem encontrar n-1, n é composto.
     return False, last_value
 
 def miller_rabin(n: int, k: int, algo: str, last_value: int) -> tuple[bool, int]:
-    """Miller-Rabin primality test with custom PRNG."""
-    # Corner cases
+    # Casos triviais:
+    # Se n <= 1 ou n == 4, retorna falso (composto).
     if n <= 1 or n == 4:
         return False, last_value
+    # Se n <= 3, retorna verdadeiro (primo).
     if n <= 3:
         return True, last_value
 
-    # Write n-1 as d*2^r with d odd
+    # Escreve n-1 na forma d*2^r, com d ímpar.
+    # Isso é feito dividindo n-1 por 2 repetidamente até d ser ímpar.
     d = n - 1
     while d % 2 == 0:
         d //= 2
 
-    # Run k trials
+    # Executa k rodadas do teste de Miller-Rabin.
+    # Em cada rodada, escolhe-se uma nova base aleatória
+    # e aplica-se miller_test.
     for _ in range(k):
         ok, last_value = miller_test(d, n, algo, last_value)
+        # Se alguma rodada detectar que n é composto, retorna imediatamente.
         if not ok:
             return False, last_value
 
+    # Se todas as k rodadas passarem, n é considerado primo provável.
     return True, last_value
 
 def fermat_test(n: int, k: int, algo: str, last_value: int) -> tuple[bool, int]:
-    """Fermat primality test with custom PRNG for base selection."""
+    # Casos triviais: 1 e 4 são compostos
     if n in (1, 4):
         return False, last_value
+    # 2 e 3 são primos
     if n in (2, 3):
         return True, last_value
+    # Números pares maiores que 2 são compostos
     if n % 2 == 0:
         return False, last_value
 
+    # Realiza k rodadas do teste para aumentar a confiabilidade
     for _ in range(k):
-        # Use custom randint replacement: [2, n-2]
+        # Escolhe uma base aleatória a no intervalo [2, n-2]
+        # 'last_value' é usado como seed de randrange_custom
         a, last_value = randrange_custom(2, n - 2, algo, last_value)
 
-        # Fermat's Little Theorem check
+        # Verifica a condição de Fermat: a^(n-1) ≡ 1 mod n
+        # Se não for satisfeito, n é composto, e a é testemunha da composição
         if power(a, n - 1, n) != 1:
             return False, last_value
 
+    # Se todas as rodadas passarem, n é considerado primo provável
     return True, last_value
 
 
@@ -168,3 +185,33 @@ def generate_prime_fermat(bits: int, algo: str = "lcg", seed: int = 21, k: int =
         else:
             print("O")
             return candidate
+        
+if __name__ == "__main__":
+    fermat_pseudoprimes = [
+    341, 561, 645, 1105, 1387, 1729, 1905, 2047, 2465, 2701,
+    2821, 3277, 4033, 4369, 4371, 4681, 5461, 6601, 7957, 8321,
+    8481, 8911, 10585, 15841, 29341, 42799, 49141, 52633, 65281, 74665,
+    80581, 85489, 88357, 90751, 253809, 334153, 340561, 399001, 410041, 449065
+]
+    # Lista para armazenar apenas resultados diferentes
+    differing_results = []
+
+    for fp in fermat_pseudoprimes:
+        ok_m, _ = miller_rabin(fp, 5, "lcg", 2**33)
+        result_m = "Primo provável" if ok_m else "Composto"
+        ok_p, _ = fermat_test(fp, 5, "lcg", 2**33)
+        result_p = "Primo provável" if ok_p else "Composto"
+
+        # Armazena apenas se houver diferença
+        if ok_m != ok_p:
+            differing_results.append([fp, result_m, result_p])
+            print(f"[Miller] PseudoPrime {fp}: {result_m}")
+            print(f"[Fermat] PseudoPrime {fp}: {result_p}")
+
+    # Exporta para CSV apenas os diferentes
+    with open("differing_results.csv", mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["PseudoPrime", "Miller-Rabin", "Fermat"])
+        writer.writerows(differing_results)
+
+    print("Resultados divergentes exportados para differing_results.csv")
